@@ -1,0 +1,122 @@
+------------------ Data Loading Notes --------------------
+What happens in the data loading step
+	train_scenes -	a list of SceneData objects - has an option to crate SceneData with dilute.
+	train_set -	A SceneDataSet object, which is essentially a list of SceneData objects,
+			with a getitem method and sample properties.
+			getitem returns one requested SceneData object.
+			The SceneData object being returned is sampled to contain data from only few cameras.
+	train_loader -	A torch DataLoader object which takes an object with getitem method to efficiently samples data with requested batch size.
+			In our case, it takes train_set which is a SceneDataSet object.
+
+------------------ Things I need to change for applying SIFT descriptors --------------------
+
+------ Step 1 - Loading Data
+
+SceneData.py:
+V	SceneData (class)
+		To contain also SIFT_Descriptors (tensor m,n,128) properties.
+		The chain of functions which creates the SceneData from the raw data from the files using config file.
+V		To contain also a sparse representation of S - name it s.
+
+V	sample_data (func)
+		To sample also the corresponding 'Rows' of S.
+
+?	get_subset (func) - I'm not sure if the code is using this function
+		To filter also the corresponding entries of S.
+		Note: Check if this func is being used in the main operation.
+
+SceneDataSet.py
+	SceneDataSet (class)
+V		make sure that the sampling of rows in the getitem function samples also corresponding rows for the descriptors.
+		Note: This is done by SceneData.sample_data noted as needed change above (in SceneData.py).
+
+utils -> dataset_utils.py
+V	Add function MandS2sparse
+
+	Adding the function load_list_to_dataset
+	which loads either:
+		list of strings (scene names)
+			or
+		list of SceneData objects depends on the flag 'use_efficient_memory' in config
+
+------ Too much memory required for ScenesDataSet object
+It seems like the loading to the data for ScenesDataSet is to large,
+as the server kicks me out whenever too much data is loaded.
+I think I will change:
+ScenesDataSet.py
+	ScenesDataSet (class)
+		data_list (attribute)
+			change this from list of SceneData objects to just list of strings (the names of scenes)
+		__getitem__ (method)
+			change this to be create the SceneData "on the fly" from the scene name.
+
+
+
+
+To check if changes needed in:
+	dataset_utils.is_valid_sample
+	if need to: In experiment initialization - add reading the use_descriptor flag
+
+------ Step 2 - Architecture Changes
+models -> SetOfSet.py
+	Added Class: REDNet (class) which uses the new data to apply appropriate network.
+
+------ Questions
+error: Linear solver failure. Failed to compute a step: CHOLMOD warning: Matrix not positive definite.
+Where the checkpoints are saved?
+x sparse tensors Running on CPU?
+
+
+
+
+------------------ Errors? --------------------
+SceneDataSet.py -> ScenesDataSet -> __getitem__
+In the last while 1 loop:
+	Strange 'or counger>0': Maybe to avoid infinite loop? Very wierd way to do it, might be an error.
+
+In models -> layers.py -> EmbeddingLayer -> forward
+	shouldn't new_shape be with last entry embeded_features.shape[2]
+	embeded_features.shape[1] isnt that a mistake? should be in_dim * (2 * multires + 1) or embeded_features.shape[2]
+
+----------------- Old Notes -------------------
+
+Updating outliers removal (columns of M) also applies to the descriptors.
+
+Might need to change also:
+	geo_utils.dilutePoint(M) - to dilute also from S.
+	
+
+Seems I have need to change:
+Add the SceneData object another property:
+	SIFT_Descriptors (tensor m,n,128)
+Eucliean - get_raw_data
+	Apply in outliers_mask also masking of SIFT_Descriptors
+
+Create a new Network class: REVNet (stands for Robust Equiv't with Visual Features Net) based on SetOfSetsOutliersNet
+with another properties:
+M_equivarient_blocks
+S_equivarient_blocks
+Merged_equivarient_blocks
+Each is a list of SetOfSetBlock objects
+
+Need to make sure:
+	SceneData filtering works well, and filters also S.
+
+When enetered to:
+if phase is Phases.FINE_TUNE and output_mode == 3
+(in Euclidean)
+
+M.shape = [598,68445]
+
+598 = 299*2 - so until now, no images got deleted.
+
+72 - Single C-Component (not in the largest)
+143 144
+
+valid_cam_indices = 297
+Ns - 299x3x3 before valid cam check, and after - 297x3x3
+
+outliers - 299x68445 and after - 297x68445
+
+M - 598x68445 and after - 594x68445
+
